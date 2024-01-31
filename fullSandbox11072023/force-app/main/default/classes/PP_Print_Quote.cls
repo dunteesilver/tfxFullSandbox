@@ -64,7 +64,7 @@ public class PP_Print_Quote {
                     Material_Name__r.Cardiac_Complimentary__c, Eligible_Price__c, Sales_Unit_Qty__c,
                     Sales_Deal__r.Owner_Name__c, Sales_Deal__r.GPO_Contract_Ref__c, Sales_Deal_Tier__c,
                     Do_Not_Show_Zero_Pricing__c, Material_Name__r.Sales_Org__c, Price_per_each__c, Total_Price_Per_Each__c,
-                    Line_Price__c, VAT__c, Material_Description__c, Total__c
+                    Line_Price__c, VAT__c, Material_Description__c, Total__c, Material_Name__r.Material_key__c, Sales_Number__c
                     FROM Price_Quote_Line_Item__c
                     WHERE Price_Quote__c = :ApexPages.currentPage().getParameters().get('id') ORDER BY Row_Order__c];
         }
@@ -74,6 +74,37 @@ public class PP_Print_Quote {
         }
     }
 
+    //method to return contract materials to add validity dates to the export
+    public List<Contract_Material__c> getConMatList(){
+        List<String> prodKeyList = new List<String>(); //list to hold material keys on pqli
+        List<String> salesDealList = new List<String>(); //list to hold material keys on pqli
+        List<Price_Quote_Line_Item__c> pqliRecList = getpqli(); //get pqli records
+        //Map<String,Price_Quote_Line_Item__c> dealMatMap = new Map<String,Price_Quote_Line_Item__c>(); //create map of sales deal and material
+
+        //loop through price quote line items to get product keys
+        for (Price_Quote_Line_Item__c curr : pqliRecList) {
+            String prodKey = curr.Material_Name__r.Material_key__c;  // Replace with the actual field name
+            prodKeyList.add(prodKey);
+            //check if sales number is not null
+            if(curr.Sales_Number__c != NULL){
+                String dealMatKey = curr.Material_Name__r.Material_key__c +'-'+ curr.Sales_Number__c;
+                salesDealList.add(curr.Sales_Number__c);
+                //dealMatMap.put(dealMatKey,curr);
+            }
+        }
+
+        try{
+            return [
+                SELECT Id, Agreement_Number__c,Material_Lookup_Key__c,Material_Name__c,Valid_From__c,Valid_To__c 
+                FROM Contract_Material__c 
+                WHERE Agreement_Number__c IN :salesDealList AND Active__c = true AND Material_Lookup_Key__c IN :prodKeyList
+            ];
+        }catch (Exception e){
+            system.debug('Exception: ' + e);
+            return NULL;
+        }
+    }//end contract material list
+    
     public list<Price_Quote_Line_Item__c> getpqli_export(){
         try {
             return [Select Material_Name__r.name, Material_Name__r.Brand_Name__c, Description__c,

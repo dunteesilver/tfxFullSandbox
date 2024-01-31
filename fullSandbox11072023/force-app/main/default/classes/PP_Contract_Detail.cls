@@ -75,7 +75,7 @@ public with sharing class PP_Contract_Detail {
                   AND Active__c = TRUE
                   ORDER BY Description__c];
 
-            mmlist = [SELECT Price__c, Agreement__r.Agreement_Number__c, Product__r.Id, Product__r.name
+            mmlist = [SELECT Price__c, Agreement__r.Agreement_Number__c, Product__r.Id, Product__r.name, Valid_From__c, Valid_To__c
                   FROM Contract_Material__c
                   WHERE Agreement__r.GPO_Contract_Ref__c = :ApexPages.currentPage().getParameters().get('gporef')
                   AND Agreement__r.Owner__c = :ApexPages.currentPage().getParameters().get('oid')
@@ -91,7 +91,7 @@ public with sharing class PP_Contract_Detail {
                   AND Active__c = TRUE
                   ORDER BY Description__c];
 
-            mmlist = [SELECT Price__c, Agreement__r.Agreement_Number__c, Product__r.Id, Product__r.name
+            mmlist = [SELECT Price__c, Agreement__r.Agreement_Number__c, Product__r.Id, Product__r.name, Valid_From__c, Valid_To__c
                   FROM Contract_Material__c
                   WHERE Agreement__r.Owner__c = :ApexPages.currentPage().getParameters().get('oid')
                   AND Agreement__r.Active__c = TRUE
@@ -138,7 +138,7 @@ public with sharing class PP_Contract_Detail {
         String gporef = ApexPages.currentPage().getParameters().get('gporef');
         String oid = ApexPages.currentPage().getParameters().get('oid');
         if(oid != NULL && gporef != NULL){
-            for(Contract_Material__c cm : [SELECT Product__r.Id
+            for(Contract_Material__c cm : [SELECT Product__r.Id, Valid_From__c, Valid_To__c
                                        FROM Contract_Material__c
                                        WHERE Agreement__r.GPO_Contract_Ref__c = :ApexPages.currentPage().getParameters().get('gporef')
                                        AND Agreement__r.Owner__c = :ApexPages.currentPage().getParameters().get('oid')
@@ -150,7 +150,7 @@ public with sharing class PP_Contract_Detail {
             }
         }
         else{
-            for(Contract_Material__c cm : [SELECT Product__r.Id
+            for(Contract_Material__c cm : [SELECT Product__r.Id, Valid_From__c, Valid_To__c
                                        FROM Contract_Material__c
                                        WHERE Agreement__r.Owner__c = :ApexPages.currentPage().getParameters().get('oid')
                                        AND Agreement__r.Active__c = TRUE
@@ -315,6 +315,7 @@ public with sharing class PP_Contract_Detail {
         htmlheader = '<tr><th align="center">#</th><th>Material Name</th>';
         htmlheader += '<th width="300px">Description</th>';
         htmlheader += '<th align="center">SU</th><th align="center">#SU</th>';
+        htmlheader += '<th align="center">Valid From - Valid To</th>';
         //<th class="text-center">Quote</th>
 
         // Build the Contract Header
@@ -333,9 +334,10 @@ public with sharing class PP_Contract_Detail {
         htmlList.add(htmlheader);
 
         set<Id> pids = new set<Id>();
+        Map<String,Contract_Material__c> matKeyDate = new Map<String,Contract_Material__c>();
         //Contract Details
         if(oid != NULL && gporef != NULL){
-            for(Contract_Material__c cm : [SELECT Price__c, Agreement__r.Agreement_Number__c, Product__r.Id, Product__r.name
+            for(Contract_Material__c cm : [SELECT Price__c, Agreement__r.Agreement_Number__c, Product__r.Id, Product__r.name, Material_Lookup_Key__c, Valid_From__c, Valid_To__c
                                            FROM Contract_Material__c
                                            WHERE Agreement__r.GPO_Contract_Ref__c = :gporef
                                            AND Agreement__r.Owner__c = :oid
@@ -345,11 +347,12 @@ public with sharing class PP_Contract_Detail {
             {
                 pids.add(cm.Product__r.Id);
                 matMap.put(cm.Agreement__r.Agreement_Number__c + cm.Product__r.Name, cm.Price__c);
+                matKeyDate.put(cm.Material_Lookup_Key__c,cm);
                 //system.debug('matMap: ' + matMap);
             }
         }
         else{
-            for(Contract_Material__c cm : [SELECT Price__c, Agreement__r.Agreement_Number__c, Product__r.Id, Product__r.name
+            for(Contract_Material__c cm : [SELECT Price__c, Agreement__r.Agreement_Number__c, Product__r.Id, Product__r.name, Material_Lookup_Key__c, Valid_From__c, Valid_To__c
                                            FROM Contract_Material__c
                                            WHERE Agreement__r.Owner__c = :oid
                                            AND Agreement__r.Active__c = TRUE
@@ -358,14 +361,22 @@ public with sharing class PP_Contract_Detail {
             {
                 pids.add(cm.Product__r.Id);
                 matMap.put(cm.Agreement__r.Agreement_Number__c + cm.Product__r.Name, cm.Price__c);
+                matKeyDate.put(cm.Material_Lookup_Key__c,cm);
                 //system.debug('matMap: ' + matMap);
             }
         }
 
-        for(Product2 p : [SELECT Id, Name, Description, Sales_Unit__c, Qty_Sales_Unit__c FROM Product2 WHERE Id IN :pids]){
+        for(Product2 p : [SELECT Id, Name, Description, Sales_Unit__c, Qty_Sales_Unit__c, Material_Key__c FROM Product2 WHERE Id IN :pids]){
+            //below handles date converstion to string
+            Date vfrom = matKeyDate.get(p.Material_Key__c).Valid_From__c;
+            Date vto = matKeyDate.get(p.Material_Key__c).Valid_To__c;
+            String vfromstr = vfrom.format();
+            String vtostr = vto.format();
+
             htmlstr = '<tr><td>' + lnum + '</td><td><a href="/apex/PP_Material_Info?pid=' + p.Name + '">' + p.Name + '</a></td>';
             htmlstr += '<td><a href="/apex/PP_Material_Info?id=' + p.Id + '">' + p.Description + '</a></td>';
             htmlstr += '<td>' + p.Sales_Unit__c + '</td><td>' + p.Qty_Sales_Unit__c + '</td>';
+            htmlstr += '<td>' + vfromstr + '-' + vtostr + '</td>';
             //<td><a href="" class="btn btn-primary btn-xs">Add</a></td>
             //
             for(Contract_Header__c ch : chlist){
