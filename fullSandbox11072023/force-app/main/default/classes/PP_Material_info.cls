@@ -21,7 +21,7 @@ public with sharing class PP_Material_info {
                         WHERE User__c = :UserInfo.getUserId()
                         LIMIT 1].Active_Sales_Org_Key__c;
 
-      return myActiveSalesOrg; 
+      return myActiveSalesOrg;
     } set;}
     
     //get active sales org key of User
@@ -143,9 +143,11 @@ public with sharing class PP_Material_info {
     public String pqId {get{
 
         try{
-            return [SELECT Name
+            return [SELECT Name,sales_org_key__c
                     FROM Price_Quote__c
-                    WHERE LastViewedDate != NULL
+                    WHERE LastViewedDate != NULL 
+                    AND sales_org_key__c= :myActiveSalesOrg
+                    
                     ORDER BY LastViewedDate DESC limit 1].Name;
         }
         catch(Exception e){
@@ -163,28 +165,21 @@ public with sharing class PP_Material_info {
         else{
             try{
                 pqid = [SELECT Id
-                      FROM Price_Quote__c
-                      WHERE LastViewedDate != NULL
-                      OR CreatedDate != NULL
-                      ORDER BY LastViewedDate,CreatedDate DESC limit 1].Id;
+                        FROM Price_Quote__c
+                        WHERE LastViewedDate != NULL
+                        OR CreatedDate != NULL
+                        ORDER BY LastViewedDate,CreatedDate DESC limit 1].Id;
                 system.debug('pqid: ' + pqid);
             }
             catch(Exception e){
                 system.debug('Catch Exception: ' + e);
             }
         }
-        
+
         String pageMaterialId = ApexPages.currentPage().getParameters().get('materialId');
         list<String> mlist = new list<String>();
         mlist.add(pageMaterialId);
-        
-      /*  Product2 mcheck = [SELECT Id, Name, Sales_Org__c, Distribution_Channel__c,Brand_Name__c, Cost__c, Exclusion_Type__c,
-                           List_Price__c, RSM_Price__c, Rep_Price__c, Director_Price__c, Floor_Price__c,
-                           Product_Description_Custom__c, Material_Status_Numeric__c, Description, Cost_Formula__c,
-                           Distributor_List__c, Alt_Site_List__c, MRP_Group__c, SearchableProducts__c, Min_Order_Qty__c 
-                           FROM Product2
-                           WHERE Id=:pageMaterialId LIMIT 1];*/
-        
+
         PP_SAP_Price sapPrice = new PP_SAP_Price();
         system.debug('*** mlist PP_Material_info *** ' + mlist);
         system.debug('*** pqid PP_Material_info *** ' + pqid);
