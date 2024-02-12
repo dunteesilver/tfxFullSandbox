@@ -1557,7 +1557,7 @@ global without sharing class PP_SAP_Price {
                 map<String, String> matMap = new map<String, String>();
                 map<Id, Contract_Material__c> prodCmMap = new map<Id, Contract_Material__c>();
                 for(Contract_Material__c cm : [SELECT Product__r.Name, Agreement__r.Agreement_Number__c, Agreement__r.Description__c, Agreement__r.Sales_Org__c,
-                                               RSM_Price__c, Rep_Price__c, Director_Price__c, List_Price__c, Price__c, Agreement__r.Objective_Name__c
+                                               RSM_Price__c, Rep_Price__c, Director_Price__c, List_Price__c, Price__c, Agreement__r.Objective_Name__c, Agreement_Number__c
                                                FROM Contract_Material__c
                                                WHERE Product__r.Id IN: mcheckSet
                                                AND Agreement_Number__c IN :ccaList
@@ -1816,7 +1816,7 @@ global without sharing class PP_SAP_Price {
                         } // End of SAP for(SAPRealPriceSet__x sap : sapList)
                         else if(cmRec != null) {
                             sapPriceNotAvailable = true;
-                            subGetPriceFromContactMaterial(pq, prod, cmRec, null, null, rowOrder, lineItemList);
+                            subGetPriceFromContactMaterial(pq, prod, cmRec, null, null, null, rowOrder, lineItemList);
                         }
                         else {
                             sapPriceNotAvailable = true;
@@ -1909,8 +1909,9 @@ global without sharing class PP_SAP_Price {
     global void getSAPprice(Product2 mcheck,String crossStr,String lineItemId, Price_Quote__c pq, String cpSoldToAcct, String plt){
         // Initiatal Values
         system.debug('*** getSAPprice quoteId ======================= ' + pq.Id);
-        Decimal rowOrder = pq.Line_Count__c;
+        Decimal rowOrder = pq.Line_Count__c; //remove parameter... available on pq record
         
+        //add logic to turn off Sap Price callout to use SF Contract Pricing (subGetPriceFromContactMaterial)
         try{
             List<Price_Quote_Line_Item__c> qLineItem = new List<Price_Quote_Line_Item__c>();
             //end of ASK Agreement logic
@@ -1941,6 +1942,7 @@ global without sharing class PP_SAP_Price {
         string pcn = '';
         String shipTo = '';
         
+        //Account has SAP Code
         if(pq.Account_Name__c != null && pq.Account_Name__r.SAP_Sold_To__c != NULL){
             cnlist.add(pq.Account_Name__r.SAP_Sold_To__c);
             pcn = pq.Account_Name__r.SAP_Sold_To__c;
@@ -1960,44 +1962,11 @@ global without sharing class PP_SAP_Price {
             system.debug('*** cnlist (Customer Number List) ================= ' + cnlist);
             system.debug('*** mcheck.Sales_Org__c b4 SAP ============== ' + mcheck.Sales_Org__c);
             system.debug('*** mcheck.Distribution_Channel__c b4 SAP============== ' + mcheck.Distribution_Channel__c);
-            system.debug('*** pcn b4 SAP============== ' + pcn);
+            //system.debug('*** pcn b4 SAP============== ' + pcn);
             system.debug('*** mcheck.Name b4 SAP============== ' + mcheck.Name);
             datetime datenew = datetime.now();
             
-            list<String> ccaList = new list<String>();
-            if(cnlist.size()>0){
-                for(Contract_Customer__c cc : [SELECT Agreement__r.Agreement_Number__c
-                                               FROM Contract_Customer__c
-                                               WHERE Account__r.SAP_Sold_To__c IN :cnlist
-                                               AND Active__c = TRUE])
-                {
-                    ccaList.add(cc.Agreement__r.Agreement_Number__c);
-                }
-            }
-            System.debug('*** ccalist:' + ccaList);
-            System.debug('*** ccalist 2:' + ccaList);
-            // Contract Material List - Used to filter the Contract Customers
-            list<String> cmList = new list<String>();
-            // Material Map - Used to filter...
-            map<String, String> matMap = new map<String, String>();
-            Contract_Material__c cmRec;
-            for(Contract_Material__c cm : [SELECT Product__r.Name, Agreement__r.Agreement_Number__c, Agreement__r.Description__c, Agreement__r.Sales_Org__c,
-                                                  RSM_Price__c, Rep_Price__c, Director_Price__c, List_Price__c, Price__c, Agreement__r.Objective_Name__c
-                                           FROM Contract_Material__c
-                                           WHERE Product__r.Id =: mcheck.Id
-                                           AND Agreement_Number__c IN :ccaList
-                                           AND Active__c = TRUE
-                                           ORDER BY Price__c
-                                           LIMIT 1])
-            {
-				cmRec = cm;              
-				cmList.add(cm.Agreement__r.Agreement_Number__c);
-                matMap.put(cm.Agreement__r.Agreement_Number__c, cm.Product__r.Name);
-            }
-            System.debug('*** cmList.size: ' + cmList.size());
-            System.debug('*** cmList *** ' + cmList );
-            
-            List<SAPRealPriceSet__x> sapList = new List<SAPRealPriceSet__x>();
+            List<SAPRealPriceSet__x> sapList = new List<SAPRealPriceSet__x>();//List or object???
             if(Test.isRunningTest()) {
                 for(Integer i = 0; i < 3; i++){
                     Decimal testPrice = i == 2 ? 0.00 : 123.00;
@@ -2041,17 +2010,46 @@ global without sharing class PP_SAP_Price {
             //************************************* Start Rebate Only Check *******************************************
             //System.debug('*** userRole crossBulk *** ' + userRole);
             
-            if(sapList!=null && sapList.size()>0){
+            if(sapList!=null && sapList.size()>0){//Sap returned data
                 System.debug('*** sapList[0].AgrObjective__c *** ' + sapList[0].AgrObjective__c);
                 System.debug('*** sapList[0].SalesDeal__c *** ' + sapList[0].SalesDeal__c);
                 String compDeal = sapList[0].SalesDeal__c;
             
-                if(sapList[0].AgrObjective__c == '06' && userRoleBoolean ){
+                if(sapList[0].AgrObjective__c == '06' && userRoleBoolean ){//customer service logic
                     System.debug('*** IN REBATE ONLY CHECK ***');
                     //SAP_1stPick = sapList[0].Agreement_Number__c.right(8);
                     
                     sapList.remove(0);
-                    
+                    list<String> ccaList = new list<String>();
+                    if(cnlist.size()>0){
+                        for(Contract_Customer__c cc : [SELECT Agreement__r.Agreement_Number__c
+                                                       FROM Contract_Customer__c
+                                                       WHERE Account__r.SAP_Sold_To__c IN :cnlist
+                                                       AND Active__c = TRUE])
+                        {
+                            ccaList.add(cc.Agreement__r.Agreement_Number__c);
+                        }
+                    }
+                    System.debug('*** ccalist:' + ccaList);
+                    System.debug('*** ccalist 2:' + ccaList);
+                    // Contract Material List - Used to filter the Contract Customers
+                    list<String> cmList = new list<String>();
+                    // Material Map - Used to filter...
+                    map<String, String> matMap = new map<String, String>();
+                    for(Contract_Material__c cm : [SELECT Product__r.Name, Agreement__r.Agreement_Number__c, Agreement__r.Description__c, Agreement__r.Sales_Org__c,
+                                                   RSM_Price__c, Rep_Price__c, Director_Price__c, List_Price__c, Price__c, Agreement__r.Objective_Name__c
+                                                   FROM Contract_Material__c
+                                                   WHERE Product__r.Id =: mcheck.Id
+                                                   AND Agreement_Number__c IN :ccaList
+                                                   AND Active__c = TRUE
+                                                   ORDER BY Price__c
+                                                   LIMIT 1])
+                    {
+                        cmList.add(cm.Agreement__r.Agreement_Number__c);
+                        matMap.put(cm.Agreement__r.Agreement_Number__c, cm.Product__r.Name);
+                    }
+                    System.debug('*** cmList.size: ' + cmList.size());
+                    System.debug('*** cmList *** ' + cmList );
                     List<Contract_Customer__c> cc = getContractCustomer(cmList, cnlist);
                     if(cc !=null && cc.Size() > 0){
                         sapList = [SELECT SalesDeal__c, Price__c, Material__c, MtrlStatus__c, ValidFrom__c,
@@ -2242,8 +2240,8 @@ global without sharing class PP_SAP_Price {
                     system.debug('*** qLineItem ======================== ' + qLineItem);
                 }
             } // End of SAP for(SAPRealPriceSet__x sap : sapList)
-            else if(cmRec != null) {
-                subGetPriceFromContactMaterial(pq, mcheck, cmRec, crossStr, lineItemId, rowOrder, qLineItem);
+            else if(cnlist.size()>0) {
+                subGetPriceFromContactMaterial(pq, mcheck, null, cnlist, crossStr, lineItemId, rowOrder, qLineItem);
 				Apexpages.addMessage(new ApexPages.Message(ApexPages.Severity.WARNING,''+' Cannot retrieve SAP Price, using the Contract Material Price instead!'));
             }
             else {
@@ -2310,54 +2308,85 @@ global without sharing class PP_SAP_Price {
         system.debug('*** qLineItem ======================== ' + qLineItem);
     }
     
-    private void subGetPriceFromContactMaterial(Price_Quote__c pq, Product2 mcheck, Contract_Material__c cmRec, String crossStr, String lineItemId, Decimal rowOrder, List<Price_Quote_Line_Item__c> qLineItem){
+    private void subGetPriceFromContactMaterial(Price_Quote__c pq, Product2 mcheck, Contract_Material__c cm, List<string> cnlist, String crossStr, String lineItemId, Decimal rowOrder, List<Price_Quote_Line_Item__c> qLineItem){
         system.debug('*** Starting getPrice without SAP --> subGetPriceFromContactMaterial()***');
+        list<String> ccaList = new list<String>();
+        Contract_Material__c cmRec;
+        if(cm != null){
+            cmRec = cm;
+        }
+        else if(cnlist.size()>0){
+            for(Contract_Customer__c cc : [SELECT Agreement__r.Agreement_Number__c
+                                           FROM Contract_Customer__c
+                                           WHERE Account__r.SAP_Sold_To__c IN :cnlist
+                                           AND Active__c = TRUE])
+            {
+                ccaList.add(cc.Agreement__r.Agreement_Number__c);
+            }
+            System.debug('*** ccalist:' + ccaList);
+            // Material Map - Used to filter...
+            cmRec = [SELECT Product__r.Name, Agreement__r.Agreement_Number__c, Agreement__r.Description__c, Agreement__r.Sales_Org__c,
+                     RSM_Price__c, Rep_Price__c, Director_Price__c, List_Price__c, Price__c, Agreement__r.Objective_Name__c
+                     FROM Contract_Material__c
+                     WHERE Product__r.Id =: mcheck.Id
+                     AND Agreement_Number__c IN :ccaList
+                     AND Active__c = TRUE
+                     ORDER BY Price__c
+                     LIMIT 1];
+        }
+        System.debug('*** cmRec:' + cmRec);
         
-        ++rowOrder;
-        
-        Price_Quote_Line_Item__c prodQuoteLineItem1 = new Price_Quote_Line_Item__c(
-            Price_Quote__c = pq.Id,
-            Material_Name__c = mcheck.Id,
-            RSM_Price__c = cmRec.RSM_Price__c,
-            Rep_Price__c = cmRec.Rep_Price__c,
-            Director_Price__c = cmRec.Director_Price__c,
-            Floor_Price__c = mcheck.Floor_Price__c,
-            Cost__c = mcheck.Cost_Formula__c,
-            Material_Status__c = mcheck.Material_Status_Numeric__c,
-            Row_Order__c = rowOrder,
-            MRP_Group__c = mcheck.MRP_Group__c,
-            CurrencyIsoCode = pq.CurrencyIsoCode,
-            Sales_Number__c = cmRec.Agreement__r.Agreement_Number__c,
-            Sales_Deal_Description__c = cmRec.Agreement__r.Description__c,
-            Condition__c = cmRec.Agreement__r.Objective_Name__c,
-            Min_Order_Qty__c = ((pq.BusinessUnit__c == 'EMEA' || userRoleName.containsIgnoreCase('EMEA')) && mcheck.Min_Order_Qty__c != NULL && mcheck.Min_Order_Qty__c != 0) ? mcheck.Min_Order_Qty__c : 1,
-            Quantity__c = ((pq.BusinessUnit__c == 'EMEA' || userRoleName.containsIgnoreCase('EMEA')) && mcheck.Min_Order_Qty__c != NULL && mcheck.Min_Order_Qty__c != 0) ? mcheck.Min_Order_Qty__c : 1
-        );
-        
-        if(lineItemId == NULL){
-            //check for surgical custom product description
-            prodQuoteLineItem1.Product_Description__c = (mcheck.Product_Description_Custom__c != NULL) ? mcheck.Product_Description_Custom__c : mcheck.Description;
+        if(cmRec != null){
+            ++rowOrder;
             
-            prodQuoteLineItem1.Row_Order__c = pq.Line_Count__c;
+            Price_Quote_Line_Item__c prodQuoteLineItem1 = new Price_Quote_Line_Item__c(
+                Price_Quote__c = pq.Id,
+                Material_Name__c = mcheck.Id,
+                RSM_Price__c = cmRec.RSM_Price__c,
+                Rep_Price__c = cmRec.Rep_Price__c,
+                Director_Price__c = cmRec.Director_Price__c,
+                Floor_Price__c = mcheck.Floor_Price__c,
+                Cost__c = mcheck.Cost_Formula__c,
+                Material_Status__c = mcheck.Material_Status_Numeric__c,
+                Row_Order__c = rowOrder,
+                MRP_Group__c = mcheck.MRP_Group__c,
+                CurrencyIsoCode = pq.CurrencyIsoCode,
+                Sales_Number__c = cmRec.Agreement__r.Agreement_Number__c,
+                Sales_Deal_Description__c = cmRec.Agreement__r.Description__c,
+                Condition__c = cmRec.Agreement__r.Objective_Name__c,
+                Min_Order_Qty__c = ((pq.BusinessUnit__c == 'EMEA' || userRoleName.containsIgnoreCase('EMEA')) && mcheck.Min_Order_Qty__c != NULL && mcheck.Min_Order_Qty__c != 0) ? mcheck.Min_Order_Qty__c : 1,
+                Quantity__c = ((pq.BusinessUnit__c == 'EMEA' || userRoleName.containsIgnoreCase('EMEA')) && mcheck.Min_Order_Qty__c != NULL && mcheck.Min_Order_Qty__c != 0) ? mcheck.Min_Order_Qty__c : 1,
+                List_Price__c = cmRec.List_Price__c,
+                Sales_Price__c = cmRec.Price__c
+            );
             
-            prodQuoteLineItem1.List_Price__c = cmRec.List_Price__c;
-            prodQuoteLineItem1.Sales_Price__c = cmRec.Price__c;
-            prodQuoteLineItem1.Eligible_Price__c = mcheck.Distributor_List__c;
+            if(lineItemId == NULL){
+                //check for surgical custom product description
+                prodQuoteLineItem1.Product_Description__c = (mcheck.Product_Description_Custom__c != NULL) ? mcheck.Product_Description_Custom__c : mcheck.Description;
+                
+                prodQuoteLineItem1.Row_Order__c = pq.Line_Count__c;
+                
+                //prodQuoteLineItem1.List_Price__c = cmRec.List_Price__c;
+                if(prodQuoteLineItem1.Sales_Price__c < 1){
+                    prodQuoteLineItem1.Sales_Price__c = cmRec.List_Price__c;
+                    prodQuoteLineItem1.Eligible_Price__c = cmRec.List_Price__c;
+                }
+            }
+            else{
+                prodQuoteLineItem1.Id = lineItemId;
+                prodQuoteLineItem1.Hide_Crossreference__c = false;
+            }
+            
+            //cross reference check
+            If(crossStr != null && crossStr != 'refresh'){
+                prodQuoteLineItem1.Competetive_Product__c = crossStr;
+            }
+            
+            //add object to list
+            qLineItem.add(prodQuoteLineItem1);
+            
+            system.debug('*** qLineItem ======================== ' + qLineItem);
         }
-        else{
-            prodQuoteLineItem1.Id = lineItemId;
-            prodQuoteLineItem1.Hide_Crossreference__c = false;
-        }
-        
-        //cross reference check
-        If(crossStr != null && crossStr != 'refresh'){
-            prodQuoteLineItem1.Competetive_Product__c = crossStr;
-        }
-        
-        //add object to list
-        qLineItem.add(prodQuoteLineItem1);
-        
-        system.debug('*** qLineItem ======================== ' + qLineItem);
     }
     
     private void populatePriceProductToPQLIBySoldToType(Price_Quote__c pq, Product2 mcheck, Price_Quote_Line_Item__c prodQuoteLineItem1, String soldToType){
@@ -2431,126 +2460,209 @@ global without sharing class PP_SAP_Price {
         }
     }
     
-    /************************** Lightning Updates ************************/
-    /* public CustomMessage getSAPpriceForAura(List<String> materialStr,String crossStr,String lineItemId, String quoteId){
-        CustomMessage customMsg;
-        String soldToType; //Variable to hold Sold To Price List Type
-        
-        boolean refresh = FALSE;
-        if(crossStr == 'refresh'){
-            refresh = TRUE;
-        }
-        
-        Price_Quote__c pq = [Select Id, Name, Status__c, Sales_Org_Key__c, Account_Name__r.SAP_Sold_To__c, BusinessUnit__c,
-                             Line_Count__c, Account_Name__r.Account_Group__c, CurrencyIsoCode, Account_Name__r.Id, Type__c,
-                             Price_Quote_Name__c, InApproval__c, Owner_Business_Unit__c, Account_Name__r.Price_List_Type__c
-                             FROM Price_Quote__c
-                             WHERE Id =:quoteId limit 1];
-        
+    
+    //Gets the price from SAP, if execption or SAP Sold to is Null, gets price from SF Product
+    global void getSAPpriceNew(Product2 mcheck,String crossStr,String lineItemId, Price_Quote__c pq, String cpSoldToAcct, String plt){
+
+        Boolean sapDownCheck = true; //switch to custom setting later
         Decimal rowOrder = pq.Line_Count__c;
-        IF(pq.InApproval__c){
-            customMsg = new CustomMessage(ApexPages.Severity.INFO, 'Cannot add Material to an Approved Quote, please create a new quote and then try again or click Revise/Clone and try again.');
-        }
-        else{
+        List<Price_Quote_Line_Item__c> qLineItem = new List<Price_Quote_Line_Item__c>();
+        if(sapDownCheck == true){
             try{
-                String SAP_1stPick = '00000000';
-                List<SAPRealPriceSet__x> listSAP = new List<SAPRealPriceSet__x>();
-                List<Price_Quote_Line_Item__c> qLineItem = new List<Price_Quote_Line_Item__c>();
-                Product2 mcheck = new Product2();
                 
-                //adding logic for ASK Agreements
-                if(pq.Type__c == 'ASK Agreement'){
-                    mcheck = [SELECT Id, Name, Sales_Org__c, Distribution_Channel__c,Brand_Name__c, Cost__c,
-                              List_Price__c, RSM_Price__c, Rep_Price__c, Director_Price__c, Floor_Price__c,
-                              Product_Description_Custom__c, Material_Status_Numeric__c, Description, Cost_Formula__c,
-                              Distributor_List__c, Alt_Site_List__c, MRP_Group__c, SearchableProducts__c
-                              FROM Product2
-                              WHERE Id IN :materialStr
-                              AND Duplicate__c = FALSE AND ASK_Custom_Kit__c = TRUE
-                              LIMIT 1];
-                }
-                else{
-                    mcheck = [SELECT Id, Name, Sales_Org__c, Distribution_Channel__c,Brand_Name__c, Cost__c,
-                              List_Price__c, RSM_Price__c, Rep_Price__c, Director_Price__c, Floor_Price__c,
-                              Product_Description_Custom__c, Material_Status_Numeric__c, Description, Cost_Formula__c,
-                              Distributor_List__c, Alt_Site_List__c, MRP_Group__c, SearchableProducts__c
-                              FROM Product2
-                              WHERE Id IN :materialStr
-                              AND Duplicate__c = FALSE AND SearchableProducts__c = TRUE
-                              LIMIT 1];
-                }
                 //end of ASK Agreement logic
+                system.debug('*** mcheck ====================== getSAPprice 1' + mcheck);
                 
-                if(pq.Account_Name__r.SAP_Sold_To__c == NULL){
-                    ++rowOrder;
+                //pass vales to sub method for sap callout
+                subGetPriceFromSapNew(pq, mcheck, new List<String> {mcheck.Name}, crossStr,lineItemId, rowOrder, cpSoldToAcct, plt, qLineItem);
+
+                system.debug('*** qLineItem.size() in getSAPpriceNew PP_SAP_Price.cls *** ' + qLineItem.size() );
+
+                If(qLineItem.size() > 0){
+                    subAddProcessedLiToPriceQuote(pq, qLineItem, lineItemId);
+                }
+                
+            }//end of outtermost try after IF(pq.InApproval__c)
+            catch(Exception e){
+                System.debug('*** e getSapPrice *** ' + e);
+                //Apexpages.addMessage(new ApexPages.Message(ApexPages.Severity.Error,''+'Error detected: ' + e));
+            }
+        }else{
+            //run SF Contract Price Logic
+            subGetPriceFromContactMaterial(pq, mcheck, null, null, crossStr, lineItemId, rowOrder, qLineItem);
+
+            If(qLineItem.size() > 0){
+                subAddProcessedLiToPriceQuote(pq, qLineItem, lineItemId);
+            }
+        }
+    }//end getSapPriceNew
+
+    private void subGetPriceFromSapNew(Price_Quote__c pq, Product2 mcheck, List<String> materialStr, String crossStr, String lineItemId, Decimal rowOrder, String cpSoldToAcct, String soldToAcctType, List<Price_Quote_Line_Item__c> qLineItem){
+        system.debug('*** Starting getPrice with SAP ***');
+        system.debug('*** pq *** ' + pq);
+        system.debug('*** mcheck *** ' + mcheck);
+        system.debug('*** materialStr.size() *** ' + materialStr.size() );
+        system.debug('*** lineItemId *** ' + lineItemId);
+        system.debug('*** rowOrder *** ' + rowOrder);
+        system.debug('*** cpSoldToAcct *** ' + cpSoldToAcct);
+        system.debug('*** soldToAcctType *** ' + soldToAcctType);
+        system.debug('*** qLineItem.size() *** ' + qLineItem.size() );
+
+        String SAP_1stPick = '00000000';
+        boolean refresh = FALSE;
+        if(!String.isBlank(crossStr) && crossStr == 'refresh'){
+            refresh = TRUE;
+        }//end if
+        system.debug('*** crossStr *** ' + crossStr);
+        system.debug('*** crossStr refresh*** ' + refresh);
+        
+        List<string> cnlist = new List<String>();
+        String shipTo = pq.Account_Name__r.SAP_Sold_To__c;
+        
+        //Account has SAP Code
+        //if(pq.Account_Name__c != null && pq.Account_Name__r.SAP_Sold_To__c != NULL){//remove check
+        cnlist.add(shipTo);
+        cnlist.add(cpSoldToAcct);
+            
+        //Query to get Price List Type of SAP Sold To Account
+        //String soldToType = plt;
+        system.debug('*** cnlist (Customer Number List) ================= ' + cnlist);
+        system.debug('*** mcheck.Sales_Org__c b4 SAP ============== ' + mcheck.Sales_Org__c);
+        system.debug('*** mcheck.Distribution_Channel__c b4 SAP============== ' + mcheck.Distribution_Channel__c);
+        system.debug('*** mcheck.Name b4 SAP============== ' + mcheck.Name);
+        
+        datetime datenew = datetime.now(); //set datetime for sap query
+            
+        List<SAPRealPriceSet__x> sapList = new List<SAPRealPriceSet__x>();//List or object???
+        if(Test.isRunningTest()) {
+            for(Integer i = 0; i < 3; i++){
+                Decimal testPrice = i == 2 ? 0.00 : 123.00;
+                SAPRealPriceSet__x testSAP = new SAPRealPriceSet__x(
+                    SalesDeal__c = '50009064',
+                    Price__c = testPrice,
+                    Material__c = '353535',
+                    MtrlStatus__c = '40',
+                    SalesMtrlStatus__c = '40',
+                    ValidFrom__c = Date.Today(),
+                    ValidTo__c = Date.Today() + 1000,
+                    AgrDesc__c = 'Duke University SURGR',
+                    Condition__c = 'XNAF',
+                    OwnerName__c = 'Duke Univ Health System',
+                    Owner__c = 'IDN-032',
+                    AgrObjective__c = '06',
+                    Customer__c  = '0000102059',
+                    ListPrice__c = testPrice
+                );
+                sapList.add(testSAP);
+            }
+        }//end if(!Test.isRunningTest())
+        else{  
+            try {
+                sapList = [SELECT SalesDeal__c, Price__c, Material__c, MtrlStatus__c,
+                            ValidFrom__c, ValidTo__c, Agreement__c, AgrDesc__c, Condition__c,
+                            OwnerName__c, Owner__c, AgrObjective__c, Customer__c, SalesMtrlStatus__c,
+                            DistChnl__c,MatDesc__c,vat__c,Currency__c,ShipTo__c, ListPrice__c
+                            FROM SAPRealPriceSet__x
+                            WHERE SalesOrg__c = :mcheck.Sales_Org__c
+                            AND DistChnl__c = :mcheck.Distribution_Channel__c
+                            AND Customer__c = :cpSoldToAcct
+                            AND Material__c = :mcheck.Name
+                            AND ShipTo__c = :shipTo
+                            AND EffDate__c = :datetime.now()
+                            ];
+            }
+            catch(Exception ex){
+                sapList = null;
+            }
+        }
+        //************************************* Start Rebate Only Check *******************************************
+        //System.debug('*** userRole crossBulk *** ' + userRole);
+            
+            //Sap check
+            if(sapList!=null && sapList.size() > 0 ){ //Sap always returns data unless out of service
+                System.debug('*** sapList[0].AgrObjective__c *** ' + sapList[0].AgrObjective__c);
+                System.debug('*** sapList[0].SalesDeal__c *** ' + sapList[0].SalesDeal__c);
+                String compDeal = sapList[0].SalesDeal__c;       
+                
+                system.debug('*** sapList[0] ================== ' + sapList[0]);
+                //system.debug('*** sapList[0].Price__c ================== ' + sapList[0].Price__c);
+                string objname;
+                string mstatus;
+                ++rowOrder;
+                string conremap = sapList[0].Condition__c;
+
+                //start Customer Service check for rebate contract
+                if(sapList[0].AgrObjective__c == '06' && userRoleBoolean){
+                    System.debug('*** Customer Service in PP_SAP_Price.cls subGetPriceFromSapNew ***');
+                    //String cnum = shipTo;
+                    //String pnum = mcheck.name;
+                    //PP_Price_Lookup pl = new PP_Price_Lookup();
+
+                    //PageReference priceLookup = New Pagereference('/apex/PP_Price_Lookup?cid=' + cnum + '&pid='+ pnum);
+                    //priceLookup.setRedirect(true);
+                    //getCustServPrice(Price_Quote__c pq, String cnum, String pnum, List<Price_Quote_Line_Item__c> qLineItem)
+                    Price_Quote_Line_Item__c pqliObj = getCustServPrice(mcheck, crossStr, lineItemId, pq, cpSoldToAcct, soldToAcctType, qLineItem);
+                    system.debug('*** Finished getCustServPrice and now adding to list qLineItem');
+                    qLineItem.add(pqliObj);
+                }else{
+                    System.debug('*** NOT Customer Service in PP_SAP_Price.cls subGetPriceFromSapNew ***');
+                    if(cMap.size()>0 && cMap.containsKey(sapList[0].Condition__c) && cMap.get(sapList[0].Condition__c) != NULL){
+                        conremap = cMap.get(sapList[0].Condition__c);
+                    }
+                    system.debug('*** conremap *** ' + conremap);
+
+                    if(sapList[0].SalesDeal__c != NULL){
+                        SAP_1stPick = sapList[0].SalesDeal__c.right(8);
+                    }
+                    else{
+                        SAP_1stPick = 'No Contract';
+                    }
+                    system.debug('*** SAP_1stPick ================ ' + SAP_1stPick);
+                    system.debug('*** sapList[0].SalesDeal__c ================ ' + sapList[0].SalesDeal__c);
+                    String cnum2;
+
+                    //below here
+                    // Strip the leading zero's - 06Jul2016 ESC
+                    if(sapList[0].Customer__c != NULL){
+                        cnum2 = sapList[0].Customer__c.replaceAll('^0+', '');
+                    }
+                    // Checks to see if the Sales Material Status Exists and if it does we use that, otherwise we default
+                    // to the standard Material Status. - 06Jul2016 ESC
+                    if(sapList[0].SalesMtrlStatus__c != NULL){
+                        mstatus = sapList[0].SalesMtrlStatus__c;
+                    }
+                    else if(sapList[0].MtrlStatus__c != NULL){
+                        mstatus = sapList[0].MtrlStatus__c;
+                    }
                     
                     Price_Quote_Line_Item__c prodQuoteLineItem1 = new Price_Quote_Line_Item__c(
                         Price_Quote__c = pq.Id,
                         Material_Name__c = mcheck.Id,
+                        Material_Status__c = mstatus,
                         RSM_Price__c = mcheck.RSM_Price__c,
                         Rep_Price__c = mcheck.Rep_Price__c,
                         Director_Price__c = mcheck.Director_Price__c,
                         Floor_Price__c = mcheck.Floor_Price__c,
                         Cost__c = mcheck.Cost_Formula__c,
-                        Material_Status__c = mcheck.Material_Status_Numeric__c,
-                        Row_Order__c = rowOrder,
+                        Objective__c = sapList[0].AgrObjective__c,
                         MRP_Group__c = mcheck.MRP_Group__c,
-                        CurrencyIsoCode = pq.CurrencyIsoCode
+                        //Sales_Price__c = sapList[0].Price__c,
+                        Sales_Number__c = SAP_1stPick,
+                        Sales_deal_Description__c = sapList[0].AgrDesc__c,
+                        Eligible_Price__c = sapList[0].Price__c,
+                        List_Price__c = sapList[0].ListPrice__c,
+                        Min_Order_Qty__c = ((pq.BusinessUnit__c == 'EMEA' || userRoleName.containsIgnoreCase('EMEA')) && mcheck.Min_Order_Qty__c != NULL && mcheck.Min_Order_Qty__c != 0) ? mcheck.Min_Order_Qty__c : 1,
+                        Quantity__c = ((pq.BusinessUnit__c == 'EMEA' || userRoleName.containsIgnoreCase('EMEA')) && mcheck.Min_Order_Qty__c != NULL && mcheck.Min_Order_Qty__c != 0) ? mcheck.Min_Order_Qty__c : 1,
+                        Material_Description__c = (pq.Businessunit__c == 'EMEA') ? sapList[0].MatDesc__c : NULL,
+                        CurrencyIsoCode = (pq.Businessunit__c == 'EMEA') ? sapList[0].Currency__c : pq.CurrencyIsoCode,
+                        VAT__c = (pq.Businessunit__c == 'EMEA' && sapList[0].VAT__c == NULL) ? NULL : ((sapList[0].VAT__c == NULL)? NULL : Decimal.Valueof(sapList[0].Vat__c))
                     );
                     
+                    //if statement handles blank line functionality???
                     if(lineItemId == NULL){
                         //check for surgical custom product description
-                        if(mcheck.Product_Description_Custom__c != NULL){
-                            prodQuoteLineItem1.Product_Description__c = mcheck.Product_Description_Custom__c;
-                        }
-                        else{
-                            prodQuoteLineItem1.Product_Description__c = mcheck.Description;
-                        }
+                        prodQuoteLineItem1.Product_Description__c = (mcheck.Product_Description_Custom__c != NULL) ? mcheck.Product_Description_Custom__c : mcheck.Description;
                         
-                        //logic to handle Hospital, Distributor, and Alt Site pricing
-                        //Alt Site Accounts
-                        if(pq.Account_Name__r.Price_List_Type__c == 'ZA'){
-                            if(mcheck.Alt_Site_List__c != 0.00){
-                                prodQuoteLineItem1.List_Price__c = mcheck.Alt_Site_List__c;
-                                prodQuoteLineItem1.Sales_Price__c = mcheck.Alt_Site_List__c;
-                                prodQuoteLineItem1.Eligible_Price__c = mcheck.Alt_Site_List__c;
-                            }
-                            else{
-                                prodQuoteLineItem1.List_Price__c = mcheck.Alt_Site_List__c;
-                                prodQuoteLineItem1.Sales_Price__c = 0.00;
-                                prodQuoteLineItem1.Eligible_Price__c = mcheck.Alt_Site_List__c;
-                            }
-                        }
-                        
-                        //Distributor Accounts
-                        if(pq.Account_Name__r.Price_List_Type__c == 'ZD'){
-                            if(mcheck.Distributor_List__c != 0.00){
-                                prodQuoteLineItem1.List_Price__c = mcheck.Distributor_List__c;
-                                prodQuoteLineItem1.Sales_Price__c = mcheck.Distributor_List__c;
-                                prodQuoteLineItem1.Eligible_Price__c = mcheck.Distributor_List__c;
-                            }
-                            else{
-                                prodQuoteLineItem1.List_Price__c = mcheck.Distributor_List__c;
-                                prodQuoteLineItem1.Sales_Price__c = 0.00;
-                                prodQuoteLineItem1.Eligible_Price__c = mcheck.Distributor_List__c;
-                            }
-                        }
-                        
-                        //Hospital Accounts
-                        if(pq.Account_Name__r.Price_List_Type__c == 'ZH' || pq.Account_Name__r.Price_List_Type__c == ''){
-                            if(mcheck.List_Price__c != 0.00){
-                                prodQuoteLineItem1.List_Price__c = mcheck.List_Price__c;
-                                prodQuoteLineItem1.Sales_Price__c = mcheck.List_Price__c;
-                                prodQuoteLineItem1.Eligible_Price__c = mcheck.List_Price__c;
-                            }
-                            else{
-                                prodQuoteLineItem1.List_Price__c = mcheck.List_Price__c;
-                                prodQuoteLineItem1.Sales_Price__c = 0.00;
-                                prodQuoteLineItem1.Eligible_Price__c = mcheck.List_Price__c;
-                            }
-                        }
-                        
-                        prodQuoteLineItem1.Quantity__c = 1;
                         prodQuoteLineItem1.Row_Order__c = pq.Line_Count__c;
                     }
                     else{
@@ -2558,504 +2670,323 @@ global without sharing class PP_SAP_Price {
                         prodQuoteLineItem1.Hide_Crossreference__c = false;
                     }
                     
+                    //check for eligible price = 0
+                    if(sapList[0].Price__c > 0){
+                        System.debug('*** sapList[0].Price__c != 0.00 *** ');
+                        if(!refresh){
+                            System.debug('*** if(!refresh) sapList[0].Price__c > 0 *** ');
+                            system.debug('******TROUBLESHOOT HAS SAP PRICE IF******' +  sapList[0].Price__c);
+                            prodQuoteLineItem1.Sales_Price__c = sapList[0].Price__c;
+                            prodQuoteLineItem1.Eligible_Price__c = sapList[0].Price__c;
+                        }else{
+                            system.debug('******TROUBLESHOOT HAS SAP PRICE ELSE******' +  sapList[0].Price__c);
+                            prodQuoteLineItem1.Eligible_Price__c = sapList[0].Price__c;
+                            prodQuoteLineItem1.Sales_Price__c = prodQuoteLineItem1.Sales_Price__c;
+                        }
+
+                    }//end of if sap.price__c != 0.00
+                    else{
+                        //Price__c == 0 we should use ListPrice__c field from SAP
+                        //prodQuoteLineItem1.Sales_deal_Description__c = 'No Contract'; //set to No Contract if Price__c == 0
+
+                        System.debug('*** Else after If sap.price__c > 0.00 ***');
+                        if(!refresh){
+                            //logic to handle Hospital, Distributor, and Alt Site pricing
+                            system.debug('******TROUBLESHOOT NO SAP PRICE IF******' +  sapList[0].ListPrice__c);
+                            prodQuoteLineItem1.Sales_Price__c = sapList[0].ListPrice__c;
+                            prodQuoteLineItem1.Eligible_Price__c = sapList[0].ListPrice__c;
+                        }//end of if(!refresh)
+                        else{//after if(!refresh)
+                            system.debug('******TROUBLESHOOT NO SAP PRICE ELSE******' +  sapList[0].ListPrice__c);
+                            //start of refresh
+                            prodQuoteLineItem1.Eligible_Price__c = sapList[0].ListPrice__c;
+                            prodQuoteLineItem1.Sales_Price__c = prodQuoteLineItem1.Sales_Price__c;
+                        }
+                        //prodQuoteLineItem1.Eligible_Price__c = mcheck.List_Price__c;
+                    }
+
                     //cross reference check
                     If(crossStr != null && crossStr != 'refresh'){
                         prodQuoteLineItem1.Competetive_Product__c = crossStr;
                     }
                     
-                    //add object to list
+                    system.debug('*** prodQuoteLineItem1.Sales_Number__c: ' + prodQuoteLineItem1.Sales_Number__c);
+                    system.debug('*** prodQuoteLineItem1.Sales_deal_Description__c: ' + prodQuoteLineItem1.Sales_deal_Description__c);
+                    
+                    prodQuoteLineItem1.Condition__c = conremap;
+
                     qLineItem.add(prodQuoteLineItem1);
-                    
-                }
-                else{
-                    List<string> cnlist = new List<String>();
-                    cnlist.add(pq.Account_Name__r.SAP_Sold_To__c);
-                    
-                    string pcn = pq.Account_Name__r.SAP_Sold_To__c;
-                    if(pq.Account_Name__r.Account_Group__c == 'Z002'){
-                        for(Contract_Partnership__c cp : [SELECT Sale_to__c, Ship_to__c
-                                                          FROM Contract_Partnership__c
-                                                          WHERE Ship_to__c = :pq.Account_Name__r.SAP_Sold_To__c
-                                                          AND Disabled__c = FALSE])
-                        {
-                            cnlist.add(cp.Sale_to__c);
-                            pcn = cp.Sale_to__c;
-                        }
-                        
-                        
-                    }
-                    //Query to get Price List Type of SAP Sold To Account
-                    soldToType = [SELECT Price_List_Type__c FROM Account WHERE SAP_Sold_To__c = :pcn LIMIT 1].Price_List_Type__c;
-                    
-                    Map<String, String> cMap = new Map<String, String>();
-                    for(Sales_Condition_Mapping__c scm : [SELECT Name, Mapped_Value__c FROM Sales_Condition_Mapping__c]){
-                        cMap.put(scm.Name, scm.Mapped_Value__c);
-                    }
-                    
-                    Map<String, String> obMap = new Map<String, String>();
-                    obMap.put('01', 'Direct/Rebate');
-                    obMap.put('02', 'Direct');
-                    obMap.put('03', 'Distributor Netbill');
-                    obMap.put('04', 'Specialty Market');
-                    obMap.put('05', 'Strategic Accounts');
-                    obMap.put('06', 'Rebate Only');
+                }//end of else Customer Service check
+                //above here
 
-                    datetime datenew = datetime.now();
-                    List<SAPRealPriceSet__x> sapList = new List<SAPRealPriceSet__x>();
-                    if(Test.isRunningTest()) {
-                        SAPRealPriceSet__x testSAP = new SAPRealPriceSet__x(
-                            SalesDeal__c = '50009064',
-                            Price__c = 123.00,
-                            Material__c = '353535',
-                            MtrlStatus__c = '40',
-                            SalesMtrlStatus__c = '40',
-                            ValidFrom__c = Date.Today(),
-                            ValidTo__c = Date.Today() + 1000,
-                            AgrDesc__c = 'Duke University SURGR',
-                            Condition__c = 'XNAF',
-                            OwnerName__c = 'Duke Univ Health System',
-                            Owner__c = 'IDN-032',
-                            AgrObjective__c = 'Direct',
-                            Customer__c  = '0000102059'
-                        );
-                        sapList.add(testSAP);
-                    }
-                    else{    
-                        sapList = [SELECT SalesDeal__c, Price__c, Material__c, MtrlStatus__c,
-                                   ValidFrom__c, ValidTo__c, Agreement__c, AgrDesc__c, Condition__c,
-                                   OwnerName__c, Owner__c, AgrObjective__c, Customer__c, SalesMtrlStatus__c,
-                                   DistChnl__c
-                                   FROM SAPRealPriceSet__x
-                                   WHERE SalesOrg__c = :mcheck.Sales_Org__c
-                                   AND DistChnl__c = :mcheck.Distribution_Channel__c
-                                   AND Customer__c = :pcn
-                                   AND Material__c = :mcheck.Name
-                                   AND EffDate__c = :datetime.now()
-                                  ];
-                    }
-                        //************************************* Start Rebate Only Check *******************************************
-                        String compDeal = sapList[0].SalesDeal__c;
-                        if( sapList[0].AgrObjective__c == '06' && userRoleBoolean ){
-                            list<String> ccaList = new list<String>();
-                            for(Contract_Customer__c cc : [SELECT Agreement__r.Agreement_Number__c
-                                                           FROM Contract_Customer__c
-                                                           WHERE Account__r.SAP_Sold_To__c IN :cnlist
-                                                           AND Active__c = TRUE])
-                            {
-                                ccaList.add(cc.Agreement__r.Agreement_Number__c);
-                            }
-
-                            // Contract Material List - Used to filter the Contract Customers
-                            list<String> cmList = new list<String>();
-                            // Material Map - Used to filter...
-                            map<String, String> matMap = new map<String, String>();
-                            for(Contract_Material__c cm : [SELECT Product__r.Name, Agreement__r.Agreement_Number__c, Agreement__r.Sales_Org__c
-                                                           FROM Contract_Material__c
-                                                           WHERE Product__r.Id = :materialStr
-                                                           AND Agreement_Number__c IN :ccaList
-                                                           AND Active__c = TRUE
-                                                           ORDER BY Price__c
-                                                           LIMIT 1])
-                            {
-                                cmList.add(cm.Agreement__r.Agreement_Number__c);
-                                matMap.put(cm.Agreement__r.Agreement_Number__c, cm.Product__r.Name);
-                            }
-                            
-                            sapList.remove(0);
-                            //**************************** Start Contract Customer Lookup ************************************
-                            for(Contract_Customer__c cc : [SELECT Agreement__r.Agreement_Number__c, Account__r.SAP_Sold_To__c, Condition__c
-                                                           FROM Contract_Customer__c
-                                                           WHERE Agreement__r.Agreement_Number__c IN :cmList
-                                                           AND Account__r.SAP_Sold_To__c IN :cnlist
-                                                           AND Active__c = TRUE
-                                                           order by Condition_Rank__c
-                                                           LIMIT 10])
-                            {
-                                sapList = [SELECT SalesDeal__c, Price__c, Material__c, MtrlStatus__c, ValidFrom__c,
-                                           ValidTo__c, Agreement__c, AgrDesc__c, Condition__c,
-                                           OwnerName__c, Owner__c, AgrObjective__c, Customer__c, SalesMtrlStatus__c,
-                                           DistChnl__c
-                                           FROM SAPRealPriceSet__x
-                                           WHERE SalesOrg__c = :mcheck.Sales_Org__c
-                                           AND DistChnl__c = :mcheck.Distribution_Channel__c
-                                           AND Agreement__c = :cc.Agreement__r.Agreement_Number__c
-                                           AND Customer__c = :cc.Account__r.SAP_Sold_To__c
-                                           AND Material__c = :matMap.get(cc.Agreement__r.Agreement_Number__c)
-                                           AND EffDate__c = :datetime.now()
-                                           LIMIT 1 ];
-                            }
-                        }
-
-                    for(SAPRealPriceSet__x sap : sapList)
-                    {
-                        string objname;
-                        string mstatus;
-                        ++rowOrder;
-                        
-                        string conremap = sap.Condition__c;
-                        if(cMap.get(sap.Condition__c) != NULL){
-                            conremap = cMap.get(sap.Condition__c);
-                        }
-                        
-                        if(sap.SalesDeal__c != NULL){
-                            if( sap.AgrObjective__c == '06' && userRoleBoolean ){
-                                SAP_1stPick = 'No Contract';
-                            }
-                            else{
-                                SAP_1stPick = sap.SalesDeal__c.right(8);
-                            }
-                            
-                        }
-                        else{
-                            SAP_1stPick = 'No Contract';
-                        }
-                        
-                        String cnum2;
-                        // Strip the leading zero's - 06Jul2016 ESC
-                        if(sap.Customer__c != NULL){
-                            cnum2 = sap.Customer__c.replaceAll('^0+', '');
-                        }
-                        // Checks to see if the Sales Material Status Exists and if it does we use that, otherwise we default
-                        // to the standard Material Status. - 06Jul2016 ESC
-                        if(sap.SalesMtrlStatus__c != NULL){
-                            mstatus = sap.SalesMtrlStatus__c;
-                        }
-                        else if(sap.MtrlStatus__c != NULL){
-                            mstatus = sap.MtrlStatus__c;
-                        }
-                        
-                        Price_Quote_Line_Item__c prodQuoteLineItem1 = new Price_Quote_Line_Item__c(
-                            Price_Quote__c = pq.Id,
-                            Material_Name__c = mcheck.Id,
-                            Material_Status__c = mstatus,
-                            RSM_Price__c = mcheck.RSM_Price__c,
-                            Rep_Price__c = mcheck.Rep_Price__c,
-                            Director_Price__c = mcheck.Director_Price__c,
-                            Floor_Price__c = mcheck.Floor_Price__c,
-                            Cost__c = mcheck.Cost_Formula__c,
-                            Objective__c = sap.AgrObjective__c,
-                            MRP_Group__c = mcheck.MRP_Group__c,
-                            CurrencyIsoCode = pq.CurrencyIsoCode
-                        );
-                        
-                        if(lineItemId == NULL){
-                            //check for surgical custom product description
-                            if(mcheck.Product_Description_Custom__c != NULL){
-                                prodQuoteLineItem1.Product_Description__c = mcheck.Product_Description_Custom__c;
-                            }
-                            else{
-                                prodQuoteLineItem1.Product_Description__c = mcheck.Description;
-                            }
-                            
-                            prodQuoteLineItem1.Quantity__c = 1;
-                            prodQuoteLineItem1.Row_Order__c = rowOrder;
-                        }
-                        
-                        //check for eligible price = 0
-                        if(sap.Price__c != 0.00){
-                            if(!refresh){
-                                prodQuoteLineItem1.Sales_Price__c = sap.Price__c;
-                            }
-                            prodQuoteLineItem1.Eligible_Price__c = sap.Price__c;
-                            
-                            //logic to handle Hospital, Distributor, and Alt Site pricing
-                            
-                            //start of check for Customer Service Rebate Only
-                            if(sapList[0].AgrObjective__c == '06' && userRoleBoolean ){
-                                
-                                if(soldToType == 'ZA'){
-                                    prodQuoteLineItem1.List_Price__c = mcheck.Alt_Site_List__c;
-                                    prodQuoteLineItem1.Sales_Price__c = mcheck.Alt_Site_List__c;
-                                    prodQuoteLineItem1.Eligible_Price__c = mcheck.Alt_Site_List__c;
-                                }
-                                
-                                //Distributor Accounts
-                                if(soldToType == 'ZD'){
-                                    prodQuoteLineItem1.List_Price__c = mcheck.Distributor_List__c;
-                                    prodQuoteLineItem1.Sales_Price__c = mcheck.Distributor_List__c;
-                                    prodQuoteLineItem1.Eligible_Price__c = mcheck.Distributor_List__c;
-                                }
-                                
-                                //Hospital Accounts
-                                if(soldToType == 'ZH' || soldToType == '' || soldToType == NULL){
-                                    prodQuoteLineItem1.List_Price__c = mcheck.List_Price__c;
-                                    prodQuoteLineItem1.Sales_Price__c = mcheck.List_Price__c;
-                                    prodQuoteLineItem1.Eligible_Price__c = mcheck.List_Price__c;
-                                }
-                            }
-                            //end of check for Customer Service Rebate Only
-                            if( soMap.get(pq.Sales_Org_Key__c).Pricing_Type__c == 'All' ){ 
-                                   //add Canada
-                                   //Alt Site Accounts
-                                   if(soldToType == 'ZA'){
-                                       prodQuoteLineItem1.List_Price__c = mcheck.Alt_Site_List__c;
-                                   }
-                                   
-                                   //Distributor Accounts
-                                   if(soldToType == 'ZD'){
-                                       prodQuoteLineItem1.List_Price__c = mcheck.Distributor_List__c;
-                                   }
-                                   
-                                   //Hospital Accounts
-                                   if(soldToType == 'ZH' || soldToType == '' || soldToType == NULL){
-                                       prodQuoteLineItem1.List_Price__c = mcheck.List_Price__c;
-                                   }
-                               }
-                            else{
-                                if( soMap.get(pq.Sales_Org_Key__c).Pricing_Type__c == 'Distributor List' ){
-                                    prodQuoteLineItem1.List_Price__c = mcheck.Distributor_List__c;
-                                }
-                                else{
-                                    prodQuoteLineItem1.List_Price__c = mcheck.List_Price__c;
-                                }
-                            }
-                        }
-                        else{
-                            if(!refresh){
-                                //logic to handle Hospital, Distributor, and Alt Site pricing
-                                if( soMap.get(pq.Sales_Org_Key__c).Pricing_Type__c == 'All' ){
-                                       //Alt Site Accounts
-                                       if(soldToType == 'ZA'){
-                                           if(mcheck.Alt_Site_List__c != 0.00){
-                                               prodQuoteLineItem1.List_Price__c = mcheck.Alt_Site_List__c;
-                                               prodQuoteLineItem1.Sales_Price__c = mcheck.Alt_Site_List__c;
-                                               prodQuoteLineItem1.Eligible_Price__c = mcheck.Alt_Site_List__c;
-                                           }
-                                           else{
-                                               prodQuoteLineItem1.List_Price__c = mcheck.Alt_Site_List__c;
-                                               prodQuoteLineItem1.Sales_Price__c = 0.00;
-                                               prodQuoteLineItem1.Eligible_Price__c = mcheck.Alt_Site_List__c;
-                                           }
-                                       }
-                                       
-                                       //Distributor Accounts
-                                       if(soldToType == 'ZD'){
-                                           if(mcheck.Distributor_List__c != 0.00){
-                                               prodQuoteLineItem1.List_Price__c = mcheck.Distributor_List__c;
-                                               prodQuoteLineItem1.Sales_Price__c = mcheck.Distributor_List__c;
-                                               prodQuoteLineItem1.Eligible_Price__c = mcheck.Distributor_List__c;
-                                           }
-                                           else{
-                                               prodQuoteLineItem1.List_Price__c = mcheck.Distributor_List__c;
-                                               prodQuoteLineItem1.Sales_Price__c = 0.00;
-                                               prodQuoteLineItem1.Eligible_Price__c = mcheck.Distributor_List__c;
-                                           }
-                                       }
-                                       
-                                       //Hospital Accounts
-                                       if(soldToType == 'ZH' || soldToType == '' || soldToType == NULL){
-                                           if(mcheck.List_Price__c != 0.00){
-                                               prodQuoteLineItem1.List_Price__c = mcheck.List_Price__c;
-                                               prodQuoteLineItem1.Sales_Price__c = mcheck.List_Price__c;
-                                               prodQuoteLineItem1.Eligible_Price__c = mcheck.List_Price__c;
-                                           }
-                                           else{
-                                               prodQuoteLineItem1.List_Price__c = mcheck.List_Price__c;
-                                               prodQuoteLineItem1.Sales_Price__c = 0.00;
-                                               prodQuoteLineItem1.Eligible_Price__c = mcheck.List_Price__c;
-                                           }
-                                       }
-                                   }
-                                else{
-                                    //Start of US6020 ZD Pricing Only
-                                    if( soMap.get(pq.Sales_Org_Key__c).Pricing_Type__c == 'Distributor List' ){
-                                        if(mcheck.Distributor_List__c != 0.00){
-                                            prodQuoteLineItem1.List_Price__c = mcheck.Distributor_List__c;
-                                            prodQuoteLineItem1.Sales_Price__c = mcheck.Distributor_List__c;
-                                            prodQuoteLineItem1.Eligible_Price__c = mcheck.Distributor_List__c;
-                                        }
-                                        else{
-                                            prodQuoteLineItem1.List_Price__c = mcheck.Distributor_List__c;
-                                            prodQuoteLineItem1.Sales_Price__c = 0.00;
-                                            prodQuoteLineItem1.Eligible_Price__c = mcheck.Distributor_List__c;
-                                        }
-                                    }
-                                    else{
-                                        //All other Sales Orgs
-                                        if(mcheck.List_Price__c != 0.00){
-                                            prodQuoteLineItem1.List_Price__c = mcheck.List_Price__c;
-                                            prodQuoteLineItem1.Sales_Price__c = mcheck.List_Price__c;
-                                            prodQuoteLineItem1.Eligible_Price__c = mcheck.List_Price__c;
-                                        }
-                                        else{
-                                            prodQuoteLineItem1.List_Price__c = mcheck.List_Price__c;
-                                            prodQuoteLineItem1.Sales_Price__c = 0.00;
-                                            prodQuoteLineItem1.Eligible_Price__c = mcheck.List_Price__c;
-                                        }
-                                    }
-                                }
-                            }
-                            else{
-                                if( soMap.get(pq.Sales_Org_Key__c).Pricing_Type__c == 'All' ){
-                                       //Alt Site Accounts
-                                       if(soldToType == 'ZA'){
-                                           if(mcheck.Alt_Site_List__c != 0.00){
-                                               prodQuoteLineItem1.List_Price__c = mcheck.Alt_Site_List__c;
-                                               prodQuoteLineItem1.Eligible_Price__c = mcheck.Alt_Site_List__c;
-                                           }
-                                           else{
-                                               prodQuoteLineItem1.List_Price__c = mcheck.Alt_Site_List__c;
-                                               prodQuoteLineItem1.Sales_Price__c = 0.00;
-                                               prodQuoteLineItem1.Eligible_Price__c = mcheck.Alt_Site_List__c;
-                                           }
-                                       }
-                                       
-                                       //Distributor Accounts
-                                       if(soldToType == 'ZD'){
-                                           if(mcheck.Distributor_List__c != 0.00){
-                                               prodQuoteLineItem1.List_Price__c = mcheck.Distributor_List__c;
-                                               prodQuoteLineItem1.Eligible_Price__c = mcheck.Distributor_List__c;
-                                           }
-                                           else{
-                                               prodQuoteLineItem1.List_Price__c = mcheck.Distributor_List__c;
-                                               prodQuoteLineItem1.Eligible_Price__c = mcheck.Distributor_List__c;
-                                           }
-                                       }
-                                       
-                                       //Hospital Accounts
-                                       if(soldToType == 'ZH' || soldToType == '' || soldToType == NULL){
-                                           if(mcheck.List_Price__c != 0.00){
-                                               prodQuoteLineItem1.List_Price__c = mcheck.List_Price__c;
-                                               prodQuoteLineItem1.Eligible_Price__c = mcheck.List_Price__c;
-                                           }
-                                           else{
-                                               prodQuoteLineItem1.List_Price__c = mcheck.List_Price__c;
-                                               prodQuoteLineItem1.Eligible_Price__c = mcheck.List_Price__c;
-                                           }
-                                       }
-                                   }
-                                else{
-                                    //Start of US6020 ZD Pricing Only
-                                    if( soMap.get(pq.Sales_Org_Key__c).Pricing_Type__c == 'Distributor List' ){
-                                        if(mcheck.Distributor_List__c != 0.00){
-                                            prodQuoteLineItem1.List_Price__c = mcheck.Distributor_List__c;
-                                            prodQuoteLineItem1.Sales_Price__c = mcheck.Distributor_List__c;
-                                            prodQuoteLineItem1.Eligible_Price__c = mcheck.Distributor_List__c;
-                                        }
-                                        else{
-                                            prodQuoteLineItem1.List_Price__c = mcheck.Distributor_List__c;
-                                            prodQuoteLineItem1.Sales_Price__c = 0.00;
-                                            prodQuoteLineItem1.Eligible_Price__c = mcheck.Distributor_List__c;
-                                        }
-                                    }
-                                    else{
-                                        //All other Sales Orgs
-                                        if(mcheck.List_Price__c != 0.00){
-                                            prodQuoteLineItem1.List_Price__c = mcheck.List_Price__c;
-                                            prodQuoteLineItem1.Sales_Price__c = mcheck.List_Price__c;
-                                            prodQuoteLineItem1.Eligible_Price__c = mcheck.List_Price__c;
-                                        }
-                                        else{
-                                            prodQuoteLineItem1.List_Price__c = mcheck.List_Price__c;
-                                            prodQuoteLineItem1.Sales_Price__c = 0.00;
-                                            prodQuoteLineItem1.Eligible_Price__c = mcheck.List_Price__c;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        
-                        //check for SAP Agreement null or blank value
-                        
-                        prodQuoteLineItem1.Sales_Number__c = SAP_1stPick;
-                        IF(SAP_1stPick != null){
-                            //customer service rebate only check
-                            if(sapList[0].AgrObjective__c == '06' && userRoleBoolean ){
-                                prodQuoteLineItem1.Sales_deal_Description__c = NULL;
-                            }
-                            else{
-                                prodQuoteLineItem1.Sales_deal_Description__c = sap.AgrDesc__c;
-                            }
-                            
-                        }
-                        else{
-                            prodQuoteLineItem1.Sales_deal_Description__c = 'No Contract';
-                        }
-                        
-                        //cross reference check
-                        If(crossStr != null && crossStr != 'refresh'){
-                            prodQuoteLineItem1.Competetive_Product__c = crossStr;
-                        }
-                        
-                        prodQuoteLineItem1.Condition__c = conremap;
-                        
-                        If(lineItemId != NULL){
-                            prodQuoteLineItem1.Id = lineItemId;
-                            prodQuoteLineItem1.Hide_Crossreference__c = false;
-                        }
-                        
-                        qLineItem.add(prodQuoteLineItem1);
-                    }
-                    
-                }
-                
-                If(qLineItem.size() > 0){
-                    if(lineItemId == NULL){
-                        insert qLineItem;
-                        customMsg = new CustomMessage(ApexPages.Severity.CONFIRM, mcheck.Name + ' added to quote: ' + pq.Price_Quote_Name__c);
-                        
-                        //conditions below helps with Price Quote and PRF Approval Matrix Routing
-                        if(pq.BusinessUnit__c == 'Alternate Care'){
-                            lineClassCheck(quoteId);
-                        }
-                        
-                        if(pq.BusinessUnit__c == 'Anesthesia'){
-                            lineProdCheckAnes(quoteId);
-                        }
-                        
-                        if(pq.BusinessUnit__c == 'Interventional Capital' || pq.BusinessUnit__c == 'Cardiac'){
-                            lineProdCheckIcap(quoteId);
-                        }
-                        
-                        if(pq.BusinessUnit__c == 'Surgical Instruments'){
-                            lineClassCheck(quoteId);
-                        }
-                    }
-                    else{
-                        update qLineItem;
-                        customMsg = new CustomMessage(ApexPages.Severity.CONFIRM, 'Updated ' + mcheck.Name + ' on Price Quote: ' + pq.Price_Quote_Name__c);
-                        
-                        //conditions below helps with Price Quote and PRF Approval Matrix Routing
-                        if(pq.BusinessUnit__c == 'Alternate Care'){
-                            lineClassCheck(quoteId);
-                        }
-                        
-                        if(pq.BusinessUnit__c == 'Anesthesia'){
-                            lineProdCheckAnes(quoteId);
-                        }
-                        
-                        if(pq.BusinessUnit__c == 'Interventional Capital' || pq.BusinessUnit__c == 'Cardiac'){
-                            lineProdCheckIcap(quoteId);
-                        }
-                        
-                        if(pq.BusinessUnit__c == 'Surgical Instruments'){
-                            lineClassCheck(quoteId);
-                        }
-                    }
-                    
-                }
-                
+            } // End of SAP for(SAPRealPriceSet__x sap : sapList)
+            else if(cnlist.size()>0) {
+                subGetPriceFromContactMaterial(pq, mcheck, null, cnlist, crossStr, lineItemId, rowOrder, qLineItem);
+				Apexpages.addMessage(new ApexPages.Message(ApexPages.Severity.WARNING,''+' Cannot retrieve SAP Price, using the Contract Material Price instead!'));
             }
-            catch(Exception e){
-                System.debug('*** e getSapPrice *** ' + e);
-                customMsg = new CustomMessage(ApexPages.Severity.Error, 'Error detected: ' + e);
+            else {
+                subGetPriceFromProduct(pq, mcheck, crossStr, lineItemId, rowOrder, qLineItem);
+				Apexpages.addMessage(new ApexPages.Message(ApexPages.Severity.WARNING,''+' Cannot retrieve SAP Price/Contract Material Price, using the SF Product Price instead!'));
             }
-        }
-
-        return customMsg;
-    }
-    
-    public class CustomMessage {
-        @AuraEnabled
-        public String serverity;
+        //}
+        //else {
+            	//subGetPriceFromProduct(pq, mcheck, crossStr, lineItemId, rowOrder, qLineItem);
+        //}
         
-        @AuraEnabled
-        public String message;
-    
-        public CustomMessage(ApexPages.Severity pageServerity, String message) {
-            this.serverity = pageServerity.name();
-            this.message = message;
+    }//end sub get sap price
+
+    //start of Customer Service fix
+
+    public Price_Quote_Line_Item__c getCustServPrice(Product2 mcheck,String crossStr,String lineItemId, Price_Quote__c pq, String cpSoldToAcct, String soldToAcctType, List<Price_Quote_Line_Item__c> qLineItem){
+        system.debug('*** Starting getCustServPrice in PP_SAP_Price.cls ***');
+        List<SAPRealPriceSet__x> listSAP = new List<SAPRealPriceSet__x>();
+        SAPRealPriceSet__x sap = new SAPRealPriceSet__x();
+        Decimal rowOrder = pq.Line_Count__c;
+        // Step 1
+        // a. Set up our Variables
+        //string sapSoldTo = ApexPages.currentPage().getParameters().get('cid');
+        //shipTo = ApexPages.currentPage().getParameters().get('cid');
+        //string searchMaterials = ApexPages.currentPage().getParameters().get('pid');
+        String salesOrg;
+        String SAP_1stPick = '00000000';
+     
+        String shipTo = pq.Account_Name__r.SAP_Sold_To__c;
+        String matName = mcheck.Name;
+     
+        // Used to return the Text Status. Example: 40 = Saleable (40)
+        PP_General_Helper_Class ghc = new PP_General_Helper_Class();
+        map<String, String> mstatMap = ghc.mstatus();
+     
+        // Used to create a Objective Mapping in english instead of numbers
+        Map<String, String> obMap = new Map<String, String>();
+        obMap.put('01', 'Direct/Rebate');
+        obMap.put('02', 'Direct');
+        obMap.put('03', 'Distributor Netbill');
+        obMap.put('04', 'Specialty Market');
+        obMap.put('05', 'Strategic Accounts');
+        obMap.put('06', 'Rebate Only');
+     
+        // c. Create our list of Sold-to/Ship-to relationships
+        system.debug('Starting getPrice');
+        //holds list of sap codes to filter Contract Customer records... added shipTo & soldTo values
+        list<string> sapNumList = new list<String>{pq.Account_Name__r.SAP_Sold_To__c, cpSoldToAcct}; 
+        Set<String> sapNumSet = new Set<String>(); //set for unique sap codes
+        //sapNumList.add(pq.Account_Name__r.SAP_Sold_To__c); //add shipTo sap code
+        //sapNumList.add(cpSoldToAcct); //add soldTo sap code
+     
+        // Primary Customer Number (pcn) to the current account and if we are a 'Ship-To' account and there is a valid
+        // 'Sold-to' relationship in the 'Contract Partnership' table then we reset that to the Last Sold-to in the table.
+        // There is supposed to be only one to one but you can have as many as 3-4 hits on rare occasion.
+        // Customer Number List (cnlist) is the list of Customer numbers we will use to generate our list of 'Contract Customers'
+     
+        //Create instance of Pricing Portal data utility class to get list of Contract Customer records to loop through
+        //to retreive the Agreement Numbers in a list to use to pull Contract Material Records
+        PP_DataUtility ppduClass = new PP_DataUtility();
+        List<Contract_Customer__c> ccList = ppduClass.contractCustomerNonRebateList(sapNumList);
+        system.debug('*** ccList.size() *** ' + ccList.size() );
+     
+        List<String> agreeNums = new List<String>(); //holds list of agreement numbers to filter Contract Materials
+     
+        //loop to create string list of agreement numbers
+        for(Contract_Customer__c cc : ccList)
+        {
+            agreeNums.add(cc.Agreement_Number__c);
         }
-    }
-*/
+        system.debug('*** agreeNums.size() *** ' + agreeNums.size() );
+     
+        //retreive Contract Material records using Pricing Portal data utility class
+        List<Contract_Material__c> cmList = ppduClass.contractMaterialList(mcheck,agreeNums);
+        system.debug('*** cmList.size() *** ' + cmList.size() );
+     
+        List<String> agreeNumList = new List<String>(); //holds list of agreement numbers from Contract Customers
+        Map<String, String> matMap = new Map<String, String>();
+     
+        //loop to get list of agreement numbers from Contract Materials... create a map of agreement number & material name
+        for(Contract_Material__c cm : cmList)
+        {
+            agreeNumList.add(cm.Agreement_Number__c);
+            matMap.put(cm.Agreement_Number__c, cm.Material_Name__c);
+        }
+        system.debug('cmList.size: ' + cmList.size());
+     
+        //pass sap code list and agreement number list to PP data utility to return one contract customer record
+        Contract_Customer__c ccObj = ppduClass.contractCustomerAgreeFiltList(sapNumList,agreeNumList);
+        system.debug('*** ccObj *** ' + ccObj );
+     
+        sap = [SELECT SalesDeal__c, Price__c, Material__c, MtrlStatus__c, ValidFrom__c,
+               ValidTo__c, Agreement__c, AgrDesc__c, Condition__c, ListPrice__c,
+               OwnerName__c, Owner__c, AgrObjective__c, Customer__c, SalesMtrlStatus__c,
+               DistChnl__c,MatDesc__c,vat__c,Currency__c,ShipTo__c
+               FROM SAPRealPriceSet__x
+               WHERE SalesOrg__c = :mcheck.Sales_Org__c
+               AND DistChnl__c = :mcheck.Distribution_Channel__c
+               AND Agreement__c = :ccObj.Agreement_Number__c
+               AND Customer__c = :ccObj.Sap_Code__c
+               AND Material__c = :matMap.get(ccObj.Agreement_Number__c)
+               AND ShipTo__c = :shipTo
+               AND EffDate__c = :datetime.now()
+               LIMIT 1 ];
+     
+        system.debug('*** sap *** ' + sap );
+        string objname;
+        string mstatus;
+        string cnum2;
+        string ostr;
+     
+        if(obMap.get(sap.AgrObjective__c) != NULL){
+            objname = obMap.get(sap.AgrObjective__c);
+        }
+        else{
+            objname = sap.AgrObjective__c;
+        }
+     
+        string conremap = sap.Condition__c;
+        if(cMap.get(sap.Condition__c) != NULL){
+            conremap = cMap.get(sap.Condition__c);
+        }
+        system.debug('*** conditionMap *** ' + cMap);
+     
+     
+        if(sap.SalesMtrlStatus__c != NULL){
+            mstatus = sap.SalesMtrlStatus__c;
+        }
+        else if(sap.MtrlStatus__c != NULL){
+            mstatus = sap.MtrlStatus__c;
+        }
+        else{
+            mstatus = '';
+        }
+        // Strip the leading zero's
+        system.debug('*** sap.Customer__c *** ' + sap.Customer__c);
+        if(sap.Customer__c != NULL){
+            cnum2 = sap.Customer__c.replaceAll('^0+', '');
+        }
+        if(sap.Owner__c != NULL){
+            ostr = sap.Owner__c.replaceAll('^0+', '');
+        }
+     
+        /*
+        SAPRealPriceSet__x newSAP = new SAPRealPriceSet__x(
+            SalesDeal__c = sap.SalesDeal__c,
+            Price__c = sap.Price__c,
+            Material__c = sap.Material__c,
+            MtrlStatus__c = mstatus,
+            ValidFrom__c = sap.ValidFrom__c,
+            ValidTo__c = sap.ValidTo__c,
+            AgrDesc__c = sap.AgrDesc__c,
+            Condition__c = conremap,
+            OwnerName__c = sap.OwnerName__c,
+            Owner__c = ostr,
+            AgrObjective__c = objname,
+            Customer__c  = cnum2,
+            SalesMtrlStatus__c = sap.SalesMtrlStatus__c,
+            Currency__c = sap.Currency__c
+        );
+        */
+     
+        if(sap.SalesDeal__c != NULL){
+            SAP_1stPick = sap.SalesDeal__c.replaceAll('^0+', '');
+        }
+     
+        // This is now in the helper class so that we can use this across objects if needed.
+        // Also fixes the test coverage issue. - 05Jul2016 ESC
+        if(mstatMap.get(mstatus) != NULL){
+            status = mstatMap.get(mstatus);
+        }
+        else{
+            status = 'None';
+        }
+     
+        System.debug('*** Creating pqliObj in getCustServPrice PP_SAP_Price.cls ***');
+        Price_Quote_Line_Item__c pqliObj = new Price_Quote_Line_Item__c(
+            Price_Quote__c = pq.Id,
+            Material_Name__c = mcheck.Id,
+            Material_Status__c = mstatus,
+            RSM_Price__c = mcheck.RSM_Price__c,
+            Rep_Price__c = mcheck.Rep_Price__c,
+            Director_Price__c = mcheck.Director_Price__c,
+            Floor_Price__c = mcheck.Floor_Price__c,
+            Cost__c = mcheck.Cost_Formula__c,
+            Objective__c = sap.AgrObjective__c,
+            MRP_Group__c = mcheck.MRP_Group__c,
+            Sales_Price__c = sap.Price__c,
+            Sales_Number__c = SAP_1stPick,
+            Sales_deal_Description__c = sap.AgrDesc__c,
+            Eligible_Price__c = sap.Price__c,
+            List_Price__c = sap.ListPrice__c,
+            Min_Order_Qty__c = ((pq.BusinessUnit__c == 'EMEA' || userRoleName.containsIgnoreCase('EMEA')) && mcheck.Min_Order_Qty__c != NULL && mcheck.Min_Order_Qty__c != 0) ? mcheck.Min_Order_Qty__c : 1,
+            Quantity__c = ((pq.BusinessUnit__c == 'EMEA' || userRoleName.containsIgnoreCase('EMEA')) && mcheck.Min_Order_Qty__c != NULL && mcheck.Min_Order_Qty__c != 0) ? mcheck.Min_Order_Qty__c : 1,
+            Material_Description__c = (pq.Businessunit__c == 'EMEA') ? sap.MatDesc__c : NULL,
+            CurrencyIsoCode = (pq.Businessunit__c == 'EMEA') ? sap.Currency__c : pq.CurrencyIsoCode,
+            VAT__c = (pq.Businessunit__c == 'EMEA' && sap.VAT__c == NULL) ? NULL : ((sap.VAT__c == NULL)? NULL : Decimal.Valueof(sap.Vat__c))
+         );
+
+         System.debug('*** Starting if checks for EMEA ***');
+         //check for EMEA for min order qty
+         /*
+         if( (pq.BusinessUnit__c == 'EMEA' || userRoleName.containsIgnoreCase('EMEA') )
+         && mcheck.Min_Order_Qty__c != NULL && mcheck.Min_Order_Qty__c != 0){
+            pqliObj.Min_Order_Qty__c = mcheck.Min_Order_Qty__c;
+         }else{
+            pqliObj.Min_Order_Qty__c = 1;
+         }
+
+         //check for EMEA for qty
+         if( (pq.BusinessUnit__c == 'EMEA' || userRoleName.containsIgnoreCase('EMEA')) 
+         && mcheck.Min_Order_Qty__c != NULL && mcheck.Min_Order_Qty__c != 0){
+            pqliObj.Quantity__c = mcheck.Min_Order_Qty__c;
+         }else{
+            pqliObj.Quantity__c = 1;
+         }
+
+         //check for EMEA material description
+         if(pq.BusinessUnit__c == 'EMEA'){
+            pqliObj.Material_Description__c = sap.MatDesc__c;
+         }else{
+            pqliObj.Material_Description__c = NULL;
+         }
+         
+        //check for EMEA currency
+        if(pq.BusinessUnit__c == 'EMEA'){
+            pqliObj.CurrencyIsoCode = sap.Currency__c;
+        }else{
+            pqliObj.CurrencyIsoCode = pq.CurrencyIsoCode;
+        }
+
+        //check for EMEA vat value
+        if(pq.BusinessUnit__c == 'EMEA' && sap.VAT__c == NULL){
+            pqliObj.Vat__c = NULL;
+        }else if(sap.Vat__c == NULL){
+            pqliObj.Vat__c = NULL;
+        }else{
+            pqliObj.Vat__c = Decimal.Valueof(sap.Vat__c);
+        }
+        
+        if(lineItemId == NULL){
+            pqliObj.Row_Order__c = rowOrder;
+        }
+        */
+        //if statement handles blank line functionality???
+        if(lineItemId == NULL){
+            //check for surgical custom product description
+            pqliObj.Product_Description__c = (mcheck.Product_Description_Custom__c != NULL) ? mcheck.Product_Description_Custom__c : mcheck.Description;
+            pqliObj.Row_Order__c = pq.Line_Count__c;
+        }
+        else{
+            pqliObj.Id = lineItemId;
+            pqliObj.Row_Order__c = pq.Line_Count__c + 1;
+            pqliObj.Hide_Crossreference__c = false;
+        }
+        System.debug('*** pqliObj *** ' + pqliObj );
+        System.debug('*** Created pqliObj in getCustServPrice PP_SAP_Price.cls ***');
+        System.debug('*** pqliObj *** ' + pqliObj.Sales_Number__c );
+         //qLineItem.add(pqliObj);
+         return pqliObj;
+         //System.debug('*** qLineItem.size() after PQ Line Item creation getCustServPrice *** ' + qLineItem.size() );
+        //listSAP.add(newSAP);
+           
+      }
+      //end of Customer Service fix
+    
+    
 }//end of class

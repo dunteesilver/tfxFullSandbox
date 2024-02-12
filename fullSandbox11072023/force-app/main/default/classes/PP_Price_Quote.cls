@@ -74,11 +74,12 @@ return soMapNew;
                 return soldToAcct;
             }
             else{
-                return NULL;
+                soldToAcct = pq.Account_Name__r.SAP_Sold_To__c;
+                return soldToAcct; //was return null
             }
         }
         catch(Exception e){
-            soldToAcct = '';
+            soldToAcct = pq.Account_Name__r.SAP_Sold_To__c; //was = ''
             return soldToAcct;
         }
     }set;}
@@ -108,7 +109,7 @@ return soMapNew;
             return exclusionType;
         }
         catch(Exception e){
-            exclusionType = '';
+            exclusionType = ''; //check this logic later
             return exclusionType;
         }
     }set;}
@@ -1847,7 +1848,9 @@ update myUser;
                             pq.Sales_Org_Key__c = 'US6010';
                         }
                         PP_SAP_Price sapPrice = new PP_SAP_Price();
-                        sapPrice.getSAPprice(mcheck,null,null,pq,soldToAcct,soldToAcctType);
+                        //check for sap code.. if no code pass to list price method
+                        //if sap code... pass to getSapPrice
+                        sapPrice.getSAPpriceNew(mcheck,null,null,pq,soldToAcct,soldToAcctType);
                         System.debug('*** End of sapPrice from PP_Price_Quote Class ***');
                         return NULL;
                     }
@@ -2570,7 +2573,7 @@ return NULL;
                              WHERE Id =:materialId AND Sales_Org_Key__c =:pq.Sales_Org_Key__c];
             if(prods!=null && prods.size()>0)
             {
-                sapPrice.getSAPprice(prods[0],'refresh',lineItemId,pq,soldToAcct,soldToAcctType);
+                sapPrice.getSAPpriceNew(prods[0],'refresh',lineItemId,pq,soldToAcct,soldToAcctType);
             }
             
             //fixString();

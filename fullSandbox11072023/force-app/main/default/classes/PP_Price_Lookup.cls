@@ -451,6 +451,11 @@ public with sharing class PP_Price_Lookup {
                        sapList.add(testSAP);
                    }//end if(Test.isRunningTest())
                    else{
+                        system.debug('*** mcheck.Sales_Org__c *** ' + mcheck.Sales_Org__c);
+                        system.debug('*** mcheck.Distribution_Channel__c *** ' + mcheck.Distribution_Channel__c);
+                        system.debug('*** pcn *** ' + pcn);
+                        system.debug('*** searchMaterials *** ' + searchMaterials);
+                        system.debug('*** shipTo *** ' + shipTo);
                        sapList = [SELECT SalesDeal__c, Price__c, Material__c, MtrlStatus__c,
                                   ValidFrom__c, ValidTo__c, Agreement__c, AgrDesc__c, Condition__c,
                                   OwnerName__c, Owner__c, AgrObjective__c, Customer__c, SalesMtrlStatus__c,
@@ -468,6 +473,7 @@ public with sharing class PP_Price_Lookup {
 
                    for(SAPRealPriceSet__x sap : sapList)
                    {
+                       system.debug('*** sap 1st loop *** ' + sap);
 
                        string objname;
                        string mstatus;
@@ -523,6 +529,7 @@ public with sharing class PP_Price_Lookup {
                            Currency__c = sap.Currency__c
                        );
 
+                       system.debug('*** newSAP 1st *** ' + newSAP);
 
                        if(sap.SalesDeal__c != NULL){
                            SAP_1stPick = sap.SalesDeal__c.replaceAll('^0+', '');
@@ -570,6 +577,12 @@ public with sharing class PP_Price_Lookup {
                            sapList.add(testSAP);
                        }
                        else{
+                        system.debug('*** mcheck.Sales_Org__c *** ' + mcheck.Sales_Org__c);
+                        system.debug('*** mcheck.Distribution_Channel__c *** ' + mcheck.Distribution_Channel__c);
+                        system.debug('*** cc.Agreement__r.Agreement_Number__c *** ' + cc.Agreement__r.Agreement_Number__c);
+                        system.debug('*** cc.Account__r.SAP_Sold_To__c *** ' + cc.Account__r.SAP_Sold_To__c);
+                        system.debug('*** matMap.get(cc.Agreement__r.Agreement_Number__c) *** ' + matMap.get(cc.Agreement__r.Agreement_Number__c));
+                        system.debug('*** shipTo *** ' + shipTo);
                            sapList = [SELECT SalesDeal__c, Price__c, Material__c, MtrlStatus__c, ValidFrom__c,
                                       ValidTo__c, Agreement__c, AgrDesc__c, Condition__c,
                                       OwnerName__c, Owner__c, AgrObjective__c, Customer__c, SalesMtrlStatus__c,
@@ -590,6 +603,7 @@ public with sharing class PP_Price_Lookup {
                        if(SAP_1stPick != cc.Agreement__r.Agreement_Number__c.right(8)){
                            for(SAPRealPriceSet__x sap : sapList)
                            {
+                                system.debug('*** sap 2nd loop *** ' + sap);
                                if(sap.SalesDeal__c != NULL){
 
                                    string objname;
@@ -639,6 +653,7 @@ public with sharing class PP_Price_Lookup {
                                        Currency__c = sap.Currency__c
                                    );
 
+                                   system.debug('*** newSAP 2nd *** ' + newSAP);
                                    // Start Status Routine.
                                    // This is now in the helper class so that we can use this across objects if needed.
                                    // Also fixes the test coverage issue. - 05Jul2016 ESC
